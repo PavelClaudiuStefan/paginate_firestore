@@ -102,7 +102,7 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
       bloc: _cubit,
       builder: (context, state) {
         if (state is PaginationInitial) {
-          return _buildWithScrollView(context, widget.initialLoader);
+          return Center(child: widget.initialLoader);
         } else if (state is PaginationError) {
           return _buildWithScrollView(
               context,
