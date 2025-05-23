@@ -21,8 +21,7 @@ class PaginateFirestore extends StatefulWidget {
     required this.itemBuilder,
     required this.query,
     required this.itemBuilderType,
-    this.gridDelegate =
-        const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2),
+    this.gridDelegate = const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2),
     this.startAfterDocument,
     this.itemsPerPage = 15,
     this.onError,
@@ -45,6 +44,7 @@ class PaginateFirestore extends StatefulWidget {
     this.onPageChanged,
     this.header,
     this.footer,
+    this.statesTransitionAnimationDuration,
     this.isLive = false,
     this.includeMetadataChanges = false,
     this.options,
@@ -73,6 +73,8 @@ class PaginateFirestore extends StatefulWidget {
   final Widget? header;
   final Widget? footer;
 
+  final Duration? statesTransitionAnimationDuration;
+
   /// Use this only if `isLive = false`
   final GetOptions? options;
 
@@ -80,7 +82,7 @@ class PaginateFirestore extends StatefulWidget {
   final bool includeMetadataChanges;
 
   @override
-  _PaginateFirestoreState createState() => _PaginateFirestoreState();
+  State<PaginateFirestore> createState() => _PaginateFirestoreState();
 
   final Widget Function(Exception)? onError;
 
@@ -101,34 +103,47 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
     return BlocBuilder<PaginationCubit, PaginationState>(
       bloc: _cubit,
       builder: (context, state) {
-        if (state is PaginationInitial) {
-          return Center(child: widget.initialLoader);
-        } else if (state is PaginationError) {
-          return _buildWithScrollView(
-              context,
-              (widget.onError != null)
-                  ? widget.onError!(state.error)
-                  : ErrorDisplay(exception: state.error));
+        if (widget.statesTransitionAnimationDuration != null) {
+          return AnimatedSwitcher(
+            duration: widget.statesTransitionAnimationDuration!,
+            child: _buildBody(state),
+          );
         } else {
-          final loadedState = state as PaginationLoaded;
-          if (widget.onLoaded != null) {
-            widget.onLoaded!(loadedState);
-          }
-          if (loadedState.hasReachedEnd && widget.onReachedEnd != null) {
-            widget.onReachedEnd!(loadedState);
-          }
-
-          if (loadedState.documentSnapshots.isEmpty) {
-            return widget.onEmpty;
-          }
-          return widget.itemBuilderType == PaginateBuilderType.listView
-              ? _buildListView(loadedState)
-              : widget.itemBuilderType == PaginateBuilderType.gridView
-                  ? _buildGridView(loadedState)
-                  : _buildPageView(loadedState);
+          return _buildBody(state);
         }
       },
     );
+  }
+
+  Widget _buildBody(PaginationState state) {
+    if (state is PaginationInitial) {
+      return Center(
+        key: const ValueKey('pagination-initial'),
+        child: widget.initialLoader,
+      );
+    } else if (state is PaginationError) {
+      return _buildWithScrollView(
+        context,
+        (widget.onError != null) ? widget.onError!(state.error) : ErrorDisplay(key: const ValueKey('pagination-error'), exception: state.error),
+      );
+    } else {
+      final loadedState = state as PaginationLoaded;
+      if (widget.onLoaded != null) {
+        widget.onLoaded!(loadedState);
+      }
+      if (loadedState.hasReachedEnd && widget.onReachedEnd != null) {
+        widget.onReachedEnd!(loadedState);
+      }
+
+      if (loadedState.documentSnapshots.isEmpty) {
+        return widget.onEmpty;
+      }
+      return widget.itemBuilderType == PaginateBuilderType.listView
+          ? _buildListView(loadedState)
+          : widget.itemBuilderType == PaginateBuilderType.gridView
+              ? _buildGridView(loadedState)
+              : _buildPageView(loadedState);
+    }
   }
 
   Widget _buildWithScrollView(BuildContext context, Widget child) {
@@ -179,6 +194,7 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
 
   Widget _buildGridView(PaginationLoaded loadedState) {
     var gridView = CustomScrollView(
+      key: const ValueKey('pagination-custom-grid-view'),
       reverse: widget.reverse,
       controller: widget.scrollController,
       shrinkWrap: widget.shrinkWrap,
@@ -203,9 +219,7 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
                   index,
                 );
               },
-              childCount: loadedState.hasReachedEnd
-                  ? loadedState.documentSnapshots.length
-                  : loadedState.documentSnapshots.length + 1,
+              childCount: loadedState.hasReachedEnd ? loadedState.documentSnapshots.length : loadedState.documentSnapshots.length + 1,
             ),
           ),
         ),
@@ -215,9 +229,10 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
 
     if (widget.listeners != null && widget.listeners!.isNotEmpty) {
       return MultiProvider(
+        key: const ValueKey('multi-provider-grid-view'),
         providers: widget.listeners!
-            .map((_listener) => ChangeNotifierProvider(
-                  create: (context) => _listener,
+            .map((listener) => ChangeNotifierProvider(
+                  create: (context) => listener,
                 ))
             .toList(),
         child: gridView,
@@ -229,6 +244,7 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
 
   Widget _buildListView(PaginationLoaded loadedState) {
     var listView = CustomScrollView(
+      key: const ValueKey('pagination-custom-list-view'),
       reverse: widget.reverse,
       controller: widget.scrollController,
       shrinkWrap: widget.shrinkWrap,
@@ -263,13 +279,8 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
                 // ignore: avoid_returning_null
                 return null;
               },
-              childCount: max(
-                  0,
-                  (loadedState.hasReachedEnd
-                              ? loadedState.documentSnapshots.length
-                              : loadedState.documentSnapshots.length + 1) *
-                          2 -
-                      1),
+              childCount:
+                  max(0, (loadedState.hasReachedEnd ? loadedState.documentSnapshots.length : loadedState.documentSnapshots.length + 1) * 2 - 1),
             ),
           ),
         ),
@@ -279,9 +290,10 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
 
     if (widget.listeners != null && widget.listeners!.isNotEmpty) {
       return MultiProvider(
+        key: const ValueKey('multi-provider-list-view'),
         providers: widget.listeners!
-            .map((_listener) => ChangeNotifierProvider(
-                  create: (context) => _listener,
+            .map((listener) => ChangeNotifierProvider(
+                  create: (context) => listener,
                 ))
             .toList(),
         child: listView,
@@ -293,6 +305,7 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
 
   Widget _buildPageView(PaginationLoaded loadedState) {
     var pageView = Padding(
+      key: const ValueKey('pagination-page-view'),
       padding: widget.padding,
       child: PageView.custom(
         reverse: widget.reverse,
@@ -313,18 +326,17 @@ class _PaginateFirestoreState extends State<PaginateFirestore> {
               index,
             );
           },
-          childCount: loadedState.hasReachedEnd
-              ? loadedState.documentSnapshots.length
-              : loadedState.documentSnapshots.length + 1,
+          childCount: loadedState.hasReachedEnd ? loadedState.documentSnapshots.length : loadedState.documentSnapshots.length + 1,
         ),
       ),
     );
 
     if (widget.listeners != null && widget.listeners!.isNotEmpty) {
       return MultiProvider(
+        key: const ValueKey('multi-provider-page-view'),
         providers: widget.listeners!
-            .map((_listener) => ChangeNotifierProvider(
-                  create: (context) => _listener,
+            .map((listener) => ChangeNotifierProvider(
+                  create: (context) => listener,
                 ))
             .toList(),
         child: pageView,
